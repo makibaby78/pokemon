@@ -1,5 +1,5 @@
 const tilesets = [
-  { src: 'Hills.png', cols: 22, rows: 14, color: '#9bd4c3' }, //0 - 307
+  { src: 'Hills.png', cols: 22, rows: 14 }, //0 - 307
   { src: 'Wooden_House_Roof_top_left.png', cols: 1, rows: 1 }, //308
   { src: 'Wooden_House_Roof_top_center.png', cols: 1, rows: 1 }, //309
   { src: 'Wooden_House_Roof_top_right.png', cols: 1, rows: 1 }, //310
@@ -28,5 +28,10 @@ const tilesets = [
   
   { src: 'Doors.png', cols: 1, rows: 4 }, // 327 - 330
   { src: 'water.png', cols: 4, rows: 1 }, // 331 - 334
-  { src: 'Grass.png', cols: 22, rows: 14 },
+  { src: 'Grass.png', cols: 22, rows: 14 }, // 335 - 642
+  { src: 'Paths.png', cols: 4, rows: 4 }, // 643 - 659
+  { src: 'Basic_Plants.png', cols: 6, rows: 2 }, // 660 - 671
+  { src: 'Basic_Furniture.png', cols: 9, rows: 6 }, // 671 - 724
+  { src: 'Fences.png', cols: 4, rows: 4 }, // 725 - 740
+  { src: 'Wood_Bridge.png', cols: 5, rows: 3 }, // 741 - 756
 ];
