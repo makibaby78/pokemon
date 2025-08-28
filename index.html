@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Scrolling Tiled Map with Animated Player</title>
+  <meta charset="UTF-8" />
+  <title>Scrolling Tiled Map with Character Class</title>
   <style>
     canvas {
       image-rendering: pixelated;
@@ -16,6 +16,7 @@
 <script src="data.js"></script>
 <script src="tileset.js"></script>
 <script>
+/* ====== Constants & Canvas ====== */
 const TILE_SIZE = 32;
 
 const canvas = document.getElementById('game');
@@ -23,49 +24,252 @@ const ctx = canvas.getContext('2d');
 canvas.width = 600;
 canvas.height = 400;
 
+/* ====== Offscreen map canvas ====== */
 const mapCanvas = document.createElement('canvas');
 const mapCtx = mapCanvas.getContext('2d');
 
+/* ====== Tileset prep & loading ====== */
 const tilesetLimits = [];
-let tileCount = 0;
+let runningTotal = 0;
 for (const ts of tilesets) {
-  tileCount += ts.cols * ts.rows;
-  tilesetLimits.push(tileCount);
+  runningTotal += ts.cols * ts.rows;
+  tilesetLimits.push(runningTotal);
 }
 
-const images = [];
-let loadedCount = 0;
+const images = []; // loaded tileset images
+let tilesetsLoaded = 0;
+let characterLoaded = false;
 
+function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ====== DRAW A SINGLE TILE (by global index across all tilesets) ====== */
+function drawTile(globalIndex, x, y, context = ctx) {
+  // find which tileset this index belongs to
+  let tilesetIndex = 0;
+  for (let i = 0; i < tilesetLimits.length; i++) {
+    if (globalIndex < tilesetLimits[i]) {
+      tilesetIndex = i;
+      break;
+    }
+  }
+  const startIdx = tilesetIndex === 0 ? 0 : tilesetLimits[tilesetIndex - 1];
+  const localIndex = globalIndex - startIdx;
+
+  const ts = tilesets[tilesetIndex];
+  const sx = (localIndex % ts.cols) * TILE_SIZE;
+  const sy = Math.floor(localIndex / ts.cols) * TILE_SIZE;
+
+  context.drawImage(
+    images[tilesetIndex],
+    sx, sy, TILE_SIZE, TILE_SIZE,
+    x, y, TILE_SIZE, TILE_SIZE
+  );
+}
+
+/* ====== PRE-RENDER FULL MAP TO OFFSCREEN CANVAS ====== */
+function drawFullMapToCanvas() {
+  mapCanvas.width = MAP_WIDTH * TILE_SIZE;
+  mapCanvas.height = MAP_HEIGHT * TILE_SIZE;
+
+  for (let y = 0; y < MAP_HEIGHT; y++) {
+    for (let x = 0; x < MAP_WIDTH; x++) {
+      const idx = y * MAP_WIDTH + x;
+      const drawX = x * TILE_SIZE;
+      const drawY = y * TILE_SIZE;
+
+      if (baseMap[idx] != null) drawTile(baseMap[idx], drawX, drawY, mapCtx);
+      if (overlayMap[idx] != null) drawTile(overlayMap[idx], drawX, drawY, mapCtx);
+      // topMap is drawn after the player to allow "over" tiles
+    }
+  }
+}
+
+/* ====== CHARACTER CLASS ====== */
+class Character {
+  constructor(opts) {
+    const {
+      x, y, speed = 1.5,
+      spriteSrc,
+      spriteCols = 14, // your mc-2.png is 14x4
+      spriteRows = 4,
+      frameDelay = 150,
+      attackFrameDelay = 80,
+      frames
+    } = opts;
+
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.speed = speed;
+
+    this.direction = 'down';
+    this.state = 'idle';      // 'idle' | 'walking' | 'attacking'
+    this.moving = false;
+
+    this.frameIndex = 0;
+    this.lastFrameTime = 0;
+    this.frameDelay = frameDelay;
+    this.attackFrameDelay = attackFrameDelay;
+
+    this.frames = frames;
+    this.spriteCols = spriteCols;
+    this.spriteRows = spriteRows;
+
+    // Input gating for one-shot attack while holding Space
+    this.attackHeld = false;
+
+    // Image
+    this.image = new Image();
+    this.image.onload = () => {
+      characterLoaded = true;
+      startIfReady();
+    };
+    this.image.src = spriteSrc;
+  }
+
+  handleInput(keys, lastKey) {
+    // Can't start moving while attack animation still playing
+    if (this.state === 'attacking' && this.frameIndex < this.frames['attack' + cap(this.direction)].length) {
+      this.vx = 0; this.vy = 0; this.moving = false;
+      return;
+    }
+
+    const wasMoving = this.moving;
+    this.vx = 0;
+    this.vy = 0;
+    this.moving = false;
+
+    if (keys['w'] && lastKey === 'w') {
+      this.vy = -this.speed;
+      this.direction = 'up';
+      this.moving = true;
+    }
+    if (keys['s'] && lastKey === 's') {
+      this.vy = this.speed;
+      this.direction = 'down';
+      this.moving = true;
+    }
+    if (keys['a'] && lastKey === 'a') {
+      this.vx = -this.speed;
+      this.direction = 'left';
+      this.moving = true;
+    }
+    if (keys['d'] && lastKey === 'd') {
+      this.vx = this.speed;
+      this.direction = 'right';
+      this.moving = true;
+    }
+
+    if (this.moving && !wasMoving) {
+      this.lastFrameTime = performance.now();
+      this.state = 'walking';
+    } else if (!this.moving && this.state !== 'attacking') {
+      this.state = 'idle';
+    }
+  }
+
+  startAttack() {
+    if (this.state !== 'attacking') {
+      this.state = 'attacking';
+      this.frameIndex = 0;
+      this.lastFrameTime = performance.now();
+      this.vx = 0;
+      this.vy = 0;
+      this.moving = false;
+    }
+  }
+
+  update(time, keys) {
+    // Animation selection
+    let frames;
+    if (this.state === 'attacking') {
+      frames = this.frames['attack' + cap(this.direction)];
+    } else if (this.moving || this.state === 'walking') {
+      frames = this.frames[this.direction];
+    } else {
+      frames = this.frames['idle' + cap(this.direction)];
+    }
+
+    // Frame timing
+    const delay = (this.state === 'attacking')
+      ? this.attackFrameDelay
+      : (this.moving ? this.frameDelay : this.frameDelay * 3);
+
+    if ((this.moving || this.state === 'attacking' || this.state === 'idle') &&
+        time - this.lastFrameTime > delay) {
+
+      this.lastFrameTime = time;
+
+      if (this.state === 'attacking') {
+        this.frameIndex++;
+        if (this.frameIndex >= frames.length) {
+          // Finish attack
+          this.frameIndex = 0;
+          if (keys['w'] || keys['a'] || keys['s'] || keys['d']) {
+            this.state = 'walking';
+            this.handleInput(keys, lastKey); // ✅ reapply movement after attack
+          } else {
+            this.state = 'idle';
+          }
+        }
+      } else {
+        this.frameIndex = (this.frameIndex + 1) % frames.length;
+      }
+
+    }
+  }
+
+  draw(ctx) {
+    if (!this.image || !this.image.complete) return;
+
+    // mc-2.png grid: 14 columns, 4 rows; you pass exact indices per animation
+    const frameW = this.image.naturalWidth / this.spriteCols;
+    const frameH = this.image.naturalHeight / this.spriteRows;
+
+    let frames;
+    if (this.state === 'attacking') {
+      frames = this.frames['attack' + cap(this.direction)];
+    } else if (this.moving || this.state === 'walking') {
+      frames = this.frames[this.direction];
+    } else {
+      frames = this.frames['idle' + cap(this.direction)];
+    }
+
+    const tileIndex = frames[this.frameIndex % frames.length];
+    const sx = (tileIndex % this.spriteCols) * frameW;
+    const sy = Math.floor(tileIndex / this.spriteCols) * frameH;
+
+    // Draw centered on screen (camera follows player)
+    ctx.drawImage(
+      this.image,
+      sx, sy, frameW, frameH,
+      canvas.width / 2 - frameW / 2,
+      canvas.height / 2 - frameH / 2,
+      frameW, frameH
+    );
+  }
+}
+
+/* ====== Load tileset images ====== */
 tilesets.forEach((tileset, i) => {
   const img = new Image();
-  img.src = tileset.src;
   img.onload = () => {
     images[i] = img;
-    loadedCount++;
-    if (loadedCount === tilesets.length && playerImage.complete) {
-      drawFullMapToCanvas();
-      requestAnimationFrame(gameLoop);
-    }
+    tilesetsLoaded++;
+    startIfReady();
   };
+  img.src = tileset.src;
 });
 
-const playerImage = new Image();
-playerImage.src = 'mc-2.png';
-
-const player = {
-  x: 30 * TILE_SIZE,
+/* ====== Create the player (Character instance) ====== */
+const player = new Character({
+  x: 10 * TILE_SIZE,
   y: 13 * TILE_SIZE,
-  vx: 0,
-  vy: 0,
-  speed: 1.5,
-  direction: 'down',
-  moving: false,
-  frameIndex: 0,
-  lastFrameTime: 0,
+  speed: 5,
+  spriteSrc: 'mc-2.png',
   frameDelay: 150,
   attackFrameDelay: 80,
-  state: 'idle',
-  isAttackingKey: false,
   frames: {
     down: [52, 53, 54, 55],
     left: [10, 11, 12, 13],
@@ -80,261 +284,130 @@ const player = {
     attackRight: [18, 19, 20, 21, 22, 23],
     attackUp: [32, 33, 34, 35, 36, 37]
   }
-};
+});
 
-playerImage.onload = () => {
-  if (loadedCount === tilesets.length) {
+/* ====== Start when assets ready ====== */
+function startIfReady() {
+  if (tilesetsLoaded === tilesets.length && characterLoaded) {
     drawFullMapToCanvas();
     requestAnimationFrame(gameLoop);
   }
-};
-
-function drawTile(globalIndex, x, y, context = ctx) {
-  let tilesetIndex = 0;
-  let localIndex = globalIndex;
-
-  for (let i = 0; i < tilesetLimits.length; i++) {
-    if (globalIndex < tilesetLimits[i]) {
-      tilesetIndex = i;
-      localIndex = globalIndex - (tilesetLimits[i - 1] || 0);
-      break;
-    }
-  }
-
-  const ts = tilesets[tilesetIndex];
-  const sx = (localIndex % ts.cols) * TILE_SIZE;
-  const sy = Math.floor(localIndex / ts.cols) * TILE_SIZE;
-
-  context.drawImage(
-    images[tilesetIndex],
-    sx, sy, TILE_SIZE, TILE_SIZE,
-    x, y, TILE_SIZE, TILE_SIZE
-  );
 }
 
-function drawFullMapToCanvas() {
-  mapCanvas.width = MAP_WIDTH * TILE_SIZE;
-  mapCanvas.height = MAP_HEIGHT * TILE_SIZE;
-
-  for (let y = 0; y < MAP_HEIGHT; y++) {
-    for (let x = 0; x < MAP_WIDTH; x++) {
-      const idx = y * MAP_WIDTH + x;
-      const drawX = x * TILE_SIZE;
-      const drawY = y * TILE_SIZE;
-
-      if (baseMap[idx] != null) drawTile(baseMap[idx], drawX, drawY, mapCtx);
-      if (topMap[idx] != null) drawTile(topMap[idx], drawX, drawY, mapCtx);
-      if (overlayMap[idx] != null) drawTile(overlayMap[idx], drawX, drawY, mapCtx);
-    }
-  }
-}
-
-function drawPlayer(time) {
-  const playerInImageWidth = playerImage.naturalWidth / 14;
-  const playerInImageHeight = playerImage.naturalHeight / 4;
-
-  let frames;
-  if (player.state === 'attacking') {
-    frames = player.frames['attack' + cap(player.direction)];
-  } else if (player.moving || player.state === 'walking') {
-    frames = player.frames[player.direction];
-  } else {
-    frames = player.frames['idle' + cap(player.direction)];
-  }
-
-  const delay = (player.state === 'attacking')
-    ? player.attackFrameDelay
-    : (player.moving ? player.frameDelay : player.frameDelay * 3);
-
-  if ((player.moving || player.state === 'attacking' || player.state === 'idle') 
-      && time - player.lastFrameTime > delay) {
-    player.lastFrameTime = time;
-
-    if (player.state === 'attacking') {
-      player.frameIndex++;
-      if (player.frameIndex >= frames.length) {
-        player.frameIndex = 0;
-        if (keys['w'] || keys['a'] || keys['s'] || keys['d']) {
-          player.state = 'walking';
-          updateDirection();
-        } else {
-          player.state = 'idle';
-        }
-      }
-    } else {
-      player.frameIndex = (player.frameIndex + 1) % frames.length;
-    }
-  }
-
-  const tileIndex = frames[player.frameIndex];
-  const sx = (tileIndex % 14) * playerInImageWidth;
-  const sy = Math.floor(tileIndex / 14) * playerInImageHeight;
-
-  ctx.drawImage(
-    playerImage,
-    sx, sy, playerInImageWidth, playerInImageHeight,
-    canvas.width / 2 - playerInImageWidth / 2,
-    canvas.height / 2 - playerInImageHeight / 2,
-    playerInImageWidth, playerInImageHeight
-  );
-}
-
-function cap(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
+/* ====== Scene drawing ====== */
 function drawScene(time) {
   let offsetX = player.x - canvas.width / 2 + TILE_SIZE / 2;
   let offsetY = player.y - canvas.height / 2 + TILE_SIZE / 2;
 
+  // Clamp camera to map
   offsetX = Math.max(0, Math.min(offsetX, MAP_WIDTH * TILE_SIZE - canvas.width));
   offsetY = Math.max(0, Math.min(offsetY, MAP_HEIGHT * TILE_SIZE - canvas.height));
 
+  // Base + overlay (pre-rendered)
   ctx.drawImage(
     mapCanvas,
     offsetX, offsetY, canvas.width, canvas.height,
     0, 0, canvas.width, canvas.height
   );
 
-  drawPlayer(time);
+  // Player
+  player.draw(ctx);
 
+  // Top layer tiles (draw only visible)
   for (let y = 0; y < MAP_HEIGHT; y++) {
     for (let x = 0; x < MAP_WIDTH; x++) {
       const idx = y * MAP_WIDTH + x;
       const tile = topMap[idx];
-      if (tile != null) {
-        const drawX = x * TILE_SIZE - offsetX;
-        const drawY = y * TILE_SIZE - offsetY;
-        if (
-          drawX + TILE_SIZE < 0 || drawX > canvas.width ||
-          drawY + TILE_SIZE < 0 || drawY > canvas.height
-        ) continue;
-        drawTile(tile, drawX, drawY, ctx);
-      }
+      if (tile == null) continue;
+
+      const drawX = x * TILE_SIZE - offsetX;
+      const drawY = y * TILE_SIZE - offsetY;
+      if (drawX + TILE_SIZE < 0 || drawX > canvas.width || drawY + TILE_SIZE < 0 || drawY > canvas.height) continue;
+
+      drawTile(tile, drawX, drawY, ctx);
     }
   }
 }
 
-function updatePlayerPosition() {
-  const nextX = player.x + player.vx;
-  const nextY = player.y + player.vy;
+/* ====== Collision & Movement ====== */
+function updateCharacterPosition(char) {
+  const nextX = char.x + char.vx;
+  const nextY = char.y + char.vy;
 
   const corners = [
-    { x: nextX, y: nextY },
-    { x: nextX + TILE_SIZE - 1, y: nextY },
-    { x: nextX, y: nextY + TILE_SIZE - 1 },
-    { x: nextX + TILE_SIZE - 1, y: nextY + TILE_SIZE - 1 }
+    { x: nextX, y: nextY }, // TL
+    { x: nextX + TILE_SIZE - 1, y: nextY }, // TR
+    { x: nextX, y: nextY + TILE_SIZE - 1 }, // BL
+    { x: nextX + TILE_SIZE - 1, y: nextY + TILE_SIZE - 1 } // BR
   ];
 
-  let isBlocked = false;
+  let blocked = false;
 
-  for (const corner of corners) {
-    const tileX = Math.floor(corner.x / TILE_SIZE);
-    const tileY = Math.floor(corner.y / TILE_SIZE);
+  for (const c of corners) {
+    const tileX = Math.floor(c.x / TILE_SIZE);
+    const tileY = Math.floor(c.y / TILE_SIZE);
 
     if (tileX < 0 || tileX >= MAP_WIDTH || tileY < 0 || tileY >= MAP_HEIGHT) {
-      isBlocked = true;
+      blocked = true;
       break;
     }
 
-    const tileIndex = tileY * MAP_WIDTH + tileX;
+    const idx = tileY * MAP_WIDTH + tileX;
+    const b = baseMap[idx];
+    const t = topMap[idx];
+    const o = overlayMap[idx];
 
-    const b = baseMap[tileIndex];
-    const t = topMap[tileIndex];
-    const o = overlayMap[tileIndex];
-
-    if (
-      collidableTiles.includes(b) ||
-      collidableTiles.includes(t) ||
-      collidableTiles.includes(o)
-    ) {
-      isBlocked = true;
+    if (collidableTiles.includes(b) || collidableTiles.includes(t) || collidableTiles.includes(o)) {
+      blocked = true;
       break;
     }
   }
 
-  if (!isBlocked) {
-    player.x = nextX;
-    player.y = nextY;
-  } 
+  if (!blocked) {
+    char.x = nextX;
+    char.y = nextY;
+  }
 }
 
+/* ====== Game loop ====== */
 function gameLoop(time) {
+  // Optional sky/bg color
   ctx.fillStyle = '#9bd4c3';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  updatePlayerPosition();
+
+  updateCharacterPosition(player);
+  player.update(time, keys);
   drawScene(time);
+
   requestAnimationFrame(gameLoop);
 }
 
+/* ====== Input handling (WASD + Space) ====== */
 const keys = {};
 let lastKey = '';
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === ' ' && !player.isAttackingKey) {
-    player.isAttackingKey = true;
-    if (player.state !== 'attacking') {
-      player.state = 'attacking';
-      player.frameIndex = 0;
-      player.lastFrameTime = performance.now();
-      player.vx = 0;
-      player.vy = 0;
-      player.moving = false;
+  // Attack (one-shot while held)
+  if (e.code === 'Space' || e.key === ' ') {
+    if (!player.attackHeld) {
+      player.attackHeld = true;
+      player.startAttack();
     }
     return;
   }
 
   keys[e.key] = true;
   lastKey = e.key;
-  updateDirection();
+  player.handleInput(keys, lastKey);
 });
 
 document.addEventListener('keyup', (e) => {
   keys[e.key] = false;
-  if (e.key === ' ') {
-    player.isAttackingKey = false;
+  if (e.code === 'Space' || e.key === ' ') {
+    player.attackHeld = false;
   }
-  updateDirection();
+  player.handleInput(keys, lastKey);
 });
-
-function updateDirection() {
-  if (player.state === 'attacking' && player.frameIndex < player.frames['attack' + cap(player.direction)].length) {
-    return;
-  }
-
-  const wasMoving = player.moving;
-  player.vx = 0;
-  player.vy = 0;
-  player.moving = false;
-
-  if (keys['w'] && lastKey === 'w') {
-    player.vy = -player.speed;
-    player.direction = 'up';
-    player.moving = true;
-  }
-  if (keys['s'] && lastKey === 's') {
-    player.vy = player.speed;
-    player.direction = 'down';
-    player.moving = true;
-  }
-  if (keys['a'] && lastKey === 'a') {
-    player.vx = -player.speed;
-    player.direction = 'left';
-    player.moving = true;
-  }
-  if (keys['d'] && lastKey === 'd') {
-    player.vx = player.speed;
-    player.direction = 'right';
-    player.moving = true;
-  }
-
-  if (player.moving && !wasMoving) {
-    player.lastFrameTime = performance.now();
-    player.state = 'walking';
-  } else if (!player.moving && player.state !== 'attacking') {
-    player.state = 'idle';
-  }
-}
 </script>
 </body>
 </html>
