@@ -1,3 +1,4 @@
+const TILE_SIZE = 32;
 const MAP_WIDTH = 90;
 const MAP_HEIGHT = 30;
 

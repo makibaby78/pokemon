@@ -14,11 +14,10 @@
 <body>
 <canvas id="game"></canvas>
 <script src="data.js"></script>
+<script src="object.js"></script>
 <script src="tileset.js"></script>
 <script>
 /* ====== Constants & Canvas ====== */
-const TILE_SIZE = 32;
-
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = 600;
@@ -278,7 +277,6 @@ const obstacles = [
   { x: 892, y: 180, width: 40, height: 190 },
 
   // house
-
   { x: 352, y: 220, width: 288, height: 120 },
 
   //barn
@@ -367,6 +365,10 @@ function drawScene(time) {
   // Player
   player.draw(ctx);
 
+  objects.forEach(obj => {
+    obj.draw(ctx, offsetX, offsetY);
+  });
+
   // Top layer tiles (draw only visible)
   for (let y = 0; y < MAP_HEIGHT; y++) {
     for (let x = 0; x < MAP_WIDTH; x++) {
@@ -411,8 +413,7 @@ function updateCharacterPosition(char) {
 
 /* ====== Game loop ====== */
 function gameLoop(time) {
-  // Optional sky/bg color
-  ctx.fillStyle = '#9bd4c3';
+  ctx.fillStyle = '#9bd4c3'; // base color
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   updateCharacterPosition(player);
