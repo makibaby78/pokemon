@@ -1,5 +1,5 @@
 class GameObject {
-    constructor(x, y, image, frameWidth, frameHeight, frames, frameDelay = 10) {
+    constructor(x, y, image, frameWidth, frameHeight, frames, frameDelay = 5) {
       this.x = x;
       this.y = y;
       this.image = image;
@@ -43,6 +43,15 @@ class GameObject {
           this.currentFrame = (this.currentFrame + 1) % this.frames.length;
         }
     }
+
+    getHitbox() {
+        return {
+          x: this.x,
+          y: this.y,
+          width: this.width,
+          height: this.height
+        };
+      }
     
 }
 
@@ -52,13 +61,14 @@ cowImage.src = "cow-sprite.png";
 const objects = [];
 
 cowImage.onload = () => {
-    objects.push(
-        new GameObject(
-            22 * TILE_SIZE, 8 * TILE_SIZE, 
-            cowImage,
-            32, 32,
-            [0, 1, 2],
-            30,
-        )
-    );
+    const cow = new GameObject(
+        22 * TILE_SIZE, 12 * TILE_SIZE, 
+        cowImage,
+        32, 32,
+        [0, 1, 2],
+        30,
+    )
+
+    objects.push(cow);
+    obstacles.push(cow);
 };

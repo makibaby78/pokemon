@@ -76,8 +76,7 @@ const overlayMap = [
     ...emptyRow,
     ...emptyRow,
     ...emptyRow,
-    
-    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 726, 739, 739, 739, 739, 728, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    ...emptyRow,
 
     null, null, null, null, null, null, null, null, null, null, null, 313, 313, 313, 313, 313, 313, 313, 313, 313, null, 729, null, null, null, null, 729, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 
@@ -121,7 +120,7 @@ const topMap = [
         
     null, null, null, null, null, null, null, null, null, null, 308, 309, 309, 309, 309, 309, 309, 309, 309, 309, 310, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 
-    null, null, null, null, null, null, null, null, null, null, 323, 322, 322, 322, 322, 322, 322, 322, 322, 322, 321, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, 323, 322, 322, 322, 322, 322, 322, 322, 322, 322, 321, 726, 739, 739, 739, 739, 728, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 
     null, null, null, null, null, null, null, null, null, null, 312, null, null, null, null, null, null, null, null, null, 311, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 
@@ -149,3 +148,23 @@ const topMap = [
     ...emptyRow,
     ...emptyRow,
 ];
+
+const obstacles = [
+    { x: 0, y: 0, width: 1200, height: 180 },
+    { x: 0, y: 180, width: 293, height: 600 },
+    { x: 293, y: 465, width: 63, height: 315 },
+    { x: 356, y: 498, width: 320, height: 282 },
+    { x: 676, y: 530, width: 256, height: 250 },
+    { x: 892, y: 475, width: 40, height: 55 },
+    { x: 892, y: 180, width: 40, height: 190 },
+  
+    // house
+    { x: 352, y: 220, width: 288, height: 120 },
+  
+    //barn
+    { x: 686, y: 230, width: 160, height: 5 },
+    { x: 686, y: 230, width: 5, height: 135 },
+    { x: 845, y: 230, width: 5, height: 135 },
+    { x: 686, y: 360, width: 160, height: 5 },
+  ];
+  

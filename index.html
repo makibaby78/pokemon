@@ -266,26 +266,6 @@ tilesets.forEach((tileset, i) => {
   img.src = tileset.src;
 });
 
-/* ====== Define obstacles (coordinate-based) ====== */
-const obstacles = [
-  { x: 0, y: 0, width: 1200, height: 180 },
-  { x: 0, y: 180, width: 293, height: 600 },
-  { x: 293, y: 465, width: 63, height: 315 },
-  { x: 356, y: 498, width: 320, height: 282 },
-  { x: 676, y: 530, width: 256, height: 250 },
-  { x: 892, y: 475, width: 40, height: 55 },
-  { x: 892, y: 180, width: 40, height: 190 },
-
-  // house
-  { x: 352, y: 220, width: 288, height: 120 },
-
-  //barn
-  { x: 686, y: 230, width: 160, height: 5 },
-  { x: 686, y: 230, width: 5, height: 135 },
-  { x: 845, y: 230, width: 5, height: 135 },
-  { x: 686, y: 360, width: 160, height: 5 },
-];
-
 /* ====== Collision helper ====== */
 function isColliding(r1, r2) {
   return (
@@ -327,25 +307,19 @@ function startIfReady() {
     requestAnimationFrame(gameLoop);
   }
 }
-// Draw obstacles with camera offset
+/* ====== Draw obstacles (debug mode) ====== */
 function drawObstacles(ctx, offsetX, offsetY) {
-  /**/
+  /* */
   ctx.fillStyle = "rgba(255, 0, 0, 0.4)"; // red with transparency
-  
+
   obstacles.forEach(obs => {
-    ctx.fillRect(obs.x - offsetX, obs.y - offsetY, obs.width, obs.height);
+    const box = obs.getHitbox ? obs.getHitbox() : obs;
+    ctx.fillRect(box.x - offsetX, box.y - offsetY, box.width, box.height);
   });
 
-  // ✅ Player hitbox (blue) scaled to actual character size
-  ctx.fillStyle = "rgba(0, 0, 255, 0.3)";
-  ctx.fillRect(
-    player.x - offsetX,
-    player.y - offsetY,
-    player.width,
-    player.height
-  );
+  ctx.fillStyle = "rgba(0, 0, 255, 0.3)"; // player box
+  ctx.fillRect(player.x - offsetX, player.y - offsetY, player.width, player.height);
 }
-
 /* ====== Scene drawing ====== */
 function drawScene(time) {
   let offsetX = player.x - canvas.width / 2 + TILE_SIZE / 2;
@@ -362,11 +336,24 @@ function drawScene(time) {
     0, 0, canvas.width, canvas.height
   );
 
-  // Player
-  player.draw(ctx);
+  // 1. Update phase
+  [...objects, player].forEach(ent => {
+    if (typeof ent.update === "function") {
+      ent.update();
+    }
+  });
 
-  objects.forEach(obj => {
-    obj.draw(ctx, offsetX, offsetY);
+  // 2. Draw phase (with depth sorting)
+  const allEntities = [...objects, player];
+
+  allEntities.sort((a, b) => (a.y + a.height) - (b.y + b.height));
+
+  allEntities.forEach(ent => {
+    if (ent instanceof Character) {
+      ent.draw(ctx); // player draw handles offset inside
+    } else {
+      ent.draw(ctx, offsetX, offsetY); // objects need offset
+    }
   });
 
   // Top layer tiles (draw only visible)
@@ -392,22 +379,26 @@ function updateCharacterPosition(char) {
   let nextX = char.x + char.vx;
   let nextY = char.y + char.vy;
 
+  function getBox(obs) {
+    return obs.getHitbox ? obs.getHitbox() : obs;
+  }
+
   // check X movement separately
   const testX = { x: nextX, y: char.y, width: char.width, height: char.height };
-  let blockedX = obstacles.some(obs => isColliding(testX, obs));
+  let blockedX = obstacles.some(obs => isColliding(testX, getBox(obs)));
   if (!blockedX) {
     char.x = nextX;
   } else {
-    char.vx = 0; // cancel X velocity
+    char.vx = 0;
   }
 
   // check Y movement separately
   const testY = { x: char.x, y: nextY, width: char.width, height: char.height };
-  let blockedY = obstacles.some(obs => isColliding(testY, obs));
+  let blockedY = obstacles.some(obs => isColliding(testY, getBox(obs)));
   if (!blockedY) {
     char.y = nextY;
   } else {
-    char.vy = 0; // cancel Y velocity
+    char.vy = 0;
   }
 }
 
