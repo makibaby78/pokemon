@@ -1,6 +1,3 @@
-// object.js
-const DEBUG_HITBOX = true; // keep on while debugging
-
 // tiny image cache
 const ImageCache = {
   _cache: {},
@@ -359,11 +356,5 @@ class GameObject {
     }
 
     ctx.imageSmoothingEnabled = prevSmooth;
-
-    if (DEBUG_HITBOX) {
-      const hb = this.getHitbox();
-      ctx.fillStyle = 'rgba(0,255,0,0.25)';
-      ctx.fillRect(hb.x - offsetX, hb.y - offsetY, hb.width, hb.height);
-    }
   }
 }

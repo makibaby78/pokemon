@@ -412,17 +412,16 @@
     };
   
     const cow = new GameObject(
-      px, py,
-      'cow-sprite-edited.png',
-      frameW, frameH,
-      animations,
-      3,
-      scale,
-      true,
-      frameW * 2,     // hitbox width (1 tile)
-      frameH * 2,    // hitbox height (1 tile)
-      0,
-      0,
+      px, py,                   // position
+      'cow-sprite-edited.png',  // image
+      frameW, frameH,           // frame size
+      animations,               // put this for static frames[0]
+      3,                        // fps = 0 → no animation
+      scale,                    // scale (2x bigger)
+      true,                     // loop doesn’t matter
+      frameW * 2,               // hitbox width (1 tile)
+      frameH * 2,               // hitbox height (1 tile)
+      0, 0,                     // offset (so trunk is collidable, not leaves)
       0
     );
   
@@ -432,7 +431,7 @@
     const maxX = Math.min(MAP_WIDTH * TILE_SIZE - TILE_SIZE, px + patrolRadiusTiles * TILE_SIZE);
     cow.patrol = { minX, maxX };
 
-    cow.setPattern({ idleDuration: 2000, walkDuration: 2000, speed: 24, type: 'patrolIfPresent', initialDir: -1 });
+    cow.setPattern({ idleDuration: 5000, walkDuration: 2000, speed: 24, type: 'patrolIfPresent', initialDir: -1 });
 
     const speedPxPerSec = 24;
     cow.vx = -speedPxPerSec;
@@ -443,8 +442,57 @@
   
     return cow;
   }
+
+  spawnCowTile(22, 9);
+
+  function spawnChickenTile(xTile, yTile) {
+    const px = xTile * TILE_SIZE;
+    const py = yTile * TILE_SIZE;
   
-  spawnCowTile(22, 12);
+    const frameW = 16;
+    const frameH = 14;
+    const scale = 2;
+    const footHeight = TILE_SIZE;
+    const hbOffsetY = Math.round(frameH * scale - footHeight);
+  
+    const animations = {
+      walk: [2, 3, 4, 5],
+      idle: [0, 1],
+    };
+  
+    const chicken = new GameObject(
+      px, py,                   // position
+      'chicken-merged.png',     // image
+      frameW, frameH,           // frame size
+      animations,               // put this for static frames[0]
+      6,                        // fps = 0 → no animation
+      scale,                    // scale (2x bigger)
+      true,                     // loop doesn’t matter
+      frameW * 2,               // hitbox width (1 tile)
+      frameH * 2,               // hitbox height (1 tile)
+      0, 0,                     // offset (so trunk is collidable, not leaves)
+      0
+    );
+  
+    // Patrol
+    const patrolRadiusTiles = 3;
+    const minX = Math.max(0, px - patrolRadiusTiles * TILE_SIZE);
+    const maxX = Math.min(MAP_WIDTH * TILE_SIZE - TILE_SIZE, px + patrolRadiusTiles * TILE_SIZE);
+    chicken.patrol = { minX, maxX };
+
+    chicken.setPattern({ idleDuration: 500, walkDuration: 1000, speed: 80, type: 'patrolIfPresent', initialDir: -1 });
+
+    const speedPxPerSec = 24;
+    chicken.vx = -speedPxPerSec;
+  
+    // push into global lists used everywhere
+    window.objects.push(chicken);
+    window.obstacles.push(chicken);
+  
+    return chicken;
+  }
+
+  spawnChickenTile(13, 13);
   
   /* ====== Start when assets ready ====== */
   function startIfReady() {
@@ -456,6 +504,8 @@
   
   /* ====== Draw obstacles (debug) ====== */
   function drawObstacles(ctx, offsetX, offsetY) {
+
+    /*
     ctx.fillStyle = "rgba(255, 0, 0, 0.4)"; // other obstacles
     if (window.obstacles && Array.isArray(window.obstacles)) {
       for (const obs of window.obstacles) {
@@ -467,7 +517,7 @@
   
     ctx.fillStyle = "rgba(0, 0, 255, 0.3)"; // player
     const pbox = player.getHitbox();
-    ctx.fillRect(pbox.x - offsetX, pbox.y - offsetY, pbox.width, pbox.height);
+    ctx.fillRect(pbox.x - offsetX, pbox.y - offsetY, pbox.width, pbox.height);*/
   }
   
   /* ====== Draw scene ====== */
