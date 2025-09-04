@@ -17,429 +17,585 @@
 <script src="object.js"></script>
 <script src="tileset.js"></script>
 <script>
-/* ====== Constants & Canvas ====== */
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-canvas.width = 600;
-canvas.height = 400;
-
-/* ====== Offscreen map canvas ====== */
-const mapCanvas = document.createElement('canvas');
-const mapCtx = mapCanvas.getContext('2d');
-
-/* ====== Tileset prep & loading ====== */
-const tilesetLimits = [];
-let runningTotal = 0;
-for (const ts of tilesets) {
-  runningTotal += ts.cols * ts.rows;
-  tilesetLimits.push(runningTotal);
-}
-
-const images = []; // loaded tileset images
-let tilesetsLoaded = 0;
-let characterLoaded = false;
-
-function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
-
-/* ====== DRAW A SINGLE TILE (by global index across all tilesets) ====== */
-function drawTile(globalIndex, x, y, context = ctx) {
-  // find which tileset this index belongs to
-  let tilesetIndex = 0;
-  for (let i = 0; i < tilesetLimits.length; i++) {
-    if (globalIndex < tilesetLimits[i]) {
-      tilesetIndex = i;
-      break;
+  /* ====== Constants & Canvas ====== */
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 600;
+  canvas.height = 400;
+  
+  /* ====== Offscreen map canvas ====== */
+  const mapCanvas = document.createElement('canvas');
+  const mapCtx = mapCanvas.getContext('2d');
+  
+  /* ====== Global object/obstacle containers (single source of truth) ====== */
+  window.objects   = window.objects   || [];
+  window.obstacles = window.obstacles || [];
+  
+  // If data.js created a `const obstacles = [...]` (it does), copy them into window.obstacles now:
+  if (typeof obstacles !== 'undefined' && Array.isArray(obstacles)) {
+    // copy only plain boxes (avoid overwriting objects that will be added later)
+    for (const o of obstacles) {
+      // avoid pushing the same plain box twice
+      window.obstacles.push(o);
     }
   }
-  const startIdx = tilesetIndex === 0 ? 0 : tilesetLimits[tilesetIndex - 1];
-  const localIndex = globalIndex - startIdx;
-
-  const ts = tilesets[tilesetIndex];
-  const sx = (localIndex % ts.cols) * TILE_SIZE;
-  const sy = Math.floor(localIndex / ts.cols) * TILE_SIZE;
-
-  context.drawImage(
-    images[tilesetIndex],
-    sx, sy, TILE_SIZE, TILE_SIZE,
-    x, y, TILE_SIZE, TILE_SIZE
-  );
-}
-
-/* ====== PRE-RENDER FULL MAP TO OFFSCREEN CANVAS ====== */
-function drawFullMapToCanvas() {
-  mapCanvas.width = MAP_WIDTH * TILE_SIZE;
-  mapCanvas.height = MAP_HEIGHT * TILE_SIZE;
-
-  for (let y = 0; y < MAP_HEIGHT; y++) {
-    for (let x = 0; x < MAP_WIDTH; x++) {
-      const idx = y * MAP_WIDTH + x;
-      const drawX = x * TILE_SIZE;
-      const drawY = y * TILE_SIZE;
-
-      if (baseMap[idx] != null) drawTile(baseMap[idx], drawX, drawY, mapCtx);
-      if (overlayMap[idx] != null) drawTile(overlayMap[idx], drawX, drawY, mapCtx);
-      // topMap is drawn after the player to allow "over" tiles
+  
+  /* ====== Tileset prep & loading ====== */
+  /* (same as your existing logic) */
+  const tilesetLimits = [];
+  let runningTotal = 0;
+  for (const ts of tilesets) {
+    runningTotal += ts.cols * ts.rows;
+    tilesetLimits.push(runningTotal);
+  }
+  
+  const images = []; // loaded tileset images
+  let tilesetsLoaded = 0;
+  let characterLoaded = false;
+  
+  function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+  
+  /* ====== DRAW A SINGLE TILE (by global index across all tilesets) ====== */
+  function drawTile(globalIndex, x, y, context = ctx) {
+    let tilesetIndex = 0;
+    for (let i = 0; i < tilesetLimits.length; i++) {
+      if (globalIndex < tilesetLimits[i]) {
+        tilesetIndex = i;
+        break;
+      }
+    }
+    const startIdx = tilesetIndex === 0 ? 0 : tilesetLimits[tilesetIndex - 1];
+    const localIndex = globalIndex - startIdx;
+  
+    const ts = tilesets[tilesetIndex];
+    const sx = (localIndex % ts.cols) * TILE_SIZE;
+    const sy = Math.floor(localIndex / ts.cols) * TILE_SIZE;
+  
+    context.drawImage(
+      images[tilesetIndex],
+      sx, sy, TILE_SIZE, TILE_SIZE,
+      x, y, TILE_SIZE, TILE_SIZE
+    );
+  }
+  
+  /* ====== PRE-RENDER FULL MAP TO OFFSCREEN CANVAS ====== */
+  function drawFullMapToCanvas() {
+    mapCanvas.width = MAP_WIDTH * TILE_SIZE;
+    mapCanvas.height = MAP_HEIGHT * TILE_SIZE;
+  
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      for (let x = 0; x < MAP_WIDTH; x++) {
+        const idx = y * MAP_WIDTH + x;
+        const drawX = x * TILE_SIZE;
+        const drawY = y * TILE_SIZE;
+  
+        if (baseMap[idx] != null) drawTile(baseMap[idx], drawX, drawY, mapCtx);
+        if (overlayMap[idx] != null) drawTile(overlayMap[idx], drawX, drawY, mapCtx);
+        // topMap is drawn after the player to allow "over" tiles
+      }
     }
   }
-}
-
-/* ====== CHARACTER CLASS ====== */
-class Character {
-  constructor(opts) {
-    const {
-      x, y, speed = 1.5,
-      spriteSrc,
-      spriteCols = 14,
-      spriteRows = 4,
-      frameDelay = 150,
-      attackFrameDelay = 80,
-      frames,
-      width = 32,
-      height = 32,
-    } = opts;
-
-    this.x = x;
-    this.y = y;
-    this.vx = 0;
-    this.vy = 0;
-    this.speed = speed;
-
-    this.width = width;
-    this.height = height;
-
-    this.direction = 'down';
-    this.state = 'idle';      // 'idle' | 'walking' | 'attacking'
-    this.moving = false;
-
-    this.frameIndex = 0;
-    this.lastFrameTime = 0;
-    this.frameDelay = frameDelay;
-    this.attackFrameDelay = attackFrameDelay;
-
-    this.frames = frames;
-    this.spriteCols = spriteCols;
-    this.spriteRows = spriteRows;
-
-    // Input gating for one-shot attack while holding Space
-    this.attackHeld = false;
-
-    // Image
-    this.image = new Image();
-    this.image.onload = () => {
-      characterLoaded = true;
-      startIfReady();
-    };
-    this.image.src = spriteSrc;
-  }
-
-  handleInput(keys, lastKey) {
-    // Can't start moving while attack animation still playing
-    if (this.state === 'attacking' && this.frameIndex < this.frames['attack' + cap(this.direction)].length) {
-      this.vx = 0; this.vy = 0; this.moving = false;
-      return;
-    }
-
-    const wasMoving = this.moving;
-    this.vx = 0;
-    this.vy = 0;
-    this.moving = false;
-
-    if (keys['w'] && lastKey === 'w') {
-      this.vy = -this.speed;
-      this.direction = 'up';
-      this.moving = true;
-    }
-    if (keys['s'] && lastKey === 's') {
-      this.vy = this.speed;
+  
+  class Character {
+    constructor(opts) {
+      const {
+        x, y, speed = 1.5,
+        spriteSrc,
+        spriteCols = 14,
+        spriteRows = 4,
+        frameDelay = 150,
+        attackFrameDelay = 80,
+        frames,
+        // visual scale for drawing (optional). If you want to pass hitboxWidth = frameW * 2,
+        // also pass scale: 2 so drawing and hitbox match.
+        scale = 1,
+        // explicit hitbox params (optional) - will be used if provided; otherwise computed on image load
+        hitboxWidth = null,
+        hitboxHeight = null,
+        hitboxOffsetX = null,
+        hitboxOffsetY = null,
+        // fallback width/height used before image loads (not critical)
+        width = 32,
+        height = 32,
+      } = opts;
+  
+      this.x = x;
+      this.y = y;
+      this.vx = 0;
+      this.vy = 0;
+      this.speed = speed;
+  
+      // visual frame / drawing
+      this.spriteCols = spriteCols;
+      this.spriteRows = spriteRows;
+      this.frameDelay = frameDelay;
+      this.attackFrameDelay = attackFrameDelay;
+      this.frames = frames;
+  
+      this.scale = scale;
+  
+      // store user-provided flags so we don't overwrite explicit hitbox choices
+      this._userHitboxWidth  = (hitboxWidth  !== null && typeof hitboxWidth  !== 'undefined');
+      this._userHitboxHeight = (hitboxHeight !== null && typeof hitboxHeight !== 'undefined');
+      this._userHitboxOX     = (hitboxOffsetX !== null && typeof hitboxOffsetX !== 'undefined');
+      this._userHitboxOY     = (hitboxOffsetY !== null && typeof hitboxOffsetY !== 'undefined');
+  
+      // pre-populate (may be overwritten/filled on image load if not provided)
+      this.hitboxWidth  = hitboxWidth;
+      this.hitboxHeight = hitboxHeight;
+      this.hitboxOffsetX = hitboxOffsetX ?? 0;
+      this.hitboxOffsetY = hitboxOffsetY ?? 0;
+  
+      // drawing defaults until image loads
+      this.width  = width;
+      this.height = height;
+  
       this.direction = 'down';
-      this.moving = true;
-    }
-    if (keys['a'] && lastKey === 'a') {
-      this.vx = -this.speed;
-      this.direction = 'left';
-      this.moving = true;
-    }
-    if (keys['d'] && lastKey === 'd') {
-      this.vx = this.speed;
-      this.direction = 'right';
-      this.moving = true;
-    }
-
-    if (this.moving && !wasMoving) {
-      this.lastFrameTime = performance.now();
-      this.state = 'walking';
-    } else if (!this.moving && this.state !== 'attacking') {
       this.state = 'idle';
-    }
-  }
-
-  startAttack() {
-    if (this.state !== 'attacking') {
-      this.state = 'attacking';
+      this.moving = false;
+  
       this.frameIndex = 0;
-      this.lastFrameTime = performance.now();
+      this.lastFrameTime = 0;
+  
+      // Input gating for one-shot attack while holding Space
+      this.attackHeld = false;
+  
+      // Image & frame sizes (calculated on load)
+      this.image = new Image();
+      this.image.onload = () => {
+        // compute per-frame dimensions from the sprite sheet
+        const frameW = this.image.naturalWidth / this.spriteCols;
+        const frameH = this.image.naturalHeight / this.spriteRows;
+        this.frameWidth = frameW;
+        this.frameHeight = frameH;
+  
+        // drawn size (accounts for scale)
+        this.drawWidth  = Math.round(frameW * this.scale);
+        this.drawHeight = Math.round(frameH * this.scale);
+  
+        // if user didn't pass explicit hitbox dimensions, pick sane defaults:
+        // - width: frame width * scale (so hitbox covers drawn sprite width) OR tile width
+        // - height: prefer TILE_SIZE footprint (if defined) otherwise frameH * scale
+        if (!this._userHitboxWidth) {
+          // default to drawn width (frameW * scale) — this mirrors GameObject convention
+          this.hitboxWidth = Math.round(frameW * this.scale);
+        }
+        if (!this._userHitboxHeight) {
+          // prefer bottom-footprint equal to TILE_SIZE when available (common for tile games),
+          // otherwise use drawn height
+          if (typeof TILE_SIZE !== 'undefined') {
+            this.hitboxHeight = TILE_SIZE;
+          } else {
+            this.hitboxHeight = Math.round(frameH * this.scale);
+          }
+        }
+  
+        // offsets: if not provided, center horizontally and anchor to the bottom
+        if (!this._userHitboxOX) {
+          this.hitboxOffsetX = Math.round((frameW * this.scale - this.hitboxWidth) / 2);
+        }
+        if (!this._userHitboxOY) {
+          this.hitboxOffsetY = Math.round(frameH * this.scale - this.hitboxHeight);
+        }
+  
+        // ensure the engine's width/height (used for depth sorting) reflect feet/hitbox height
+        this.width  = this.hitboxWidth;
+        this.height = this.hitboxHeight;
+  
+        // mark character image ready and start game if other assets are ready
+        characterLoaded = true;
+        startIfReady();
+      };
+      this.image.src = spriteSrc;
+    }
+  
+    // Hitbox API to mirror GameObject
+    getHitboxAt(x = this.x, y = this.y) {
+      return {
+        x: x + this.hitboxOffsetX,
+        y: y + this.hitboxOffsetY,
+        width: this.hitboxWidth,
+        height: this.hitboxHeight,
+      };
+    }
+    getHitbox() { return this.getHitboxAt(); }
+  
+    handleInput(keys, lastKey) {
+      // Can't start moving while attack animation still playing
+      if (this.state === 'attacking' && this.frameIndex < this.frames['attack' + cap(this.direction)].length) {
+        this.vx = 0; this.vy = 0; this.moving = false;
+        return;
+      }
+  
+      const wasMoving = this.moving;
       this.vx = 0;
       this.vy = 0;
       this.moving = false;
-    }
-  }
-
-  update(time, keys) {
-    // Animation selection
-    let frames;
-    if (this.state === 'attacking') {
-      frames = this.frames['attack' + cap(this.direction)];
-    } else if (this.moving || this.state === 'walking') {
-      frames = this.frames[this.direction];
-    } else {
-      frames = this.frames['idle' + cap(this.direction)];
-    }
-
-    // Frame timing
-    const delay = (this.state === 'attacking')
-      ? this.attackFrameDelay
-      : (this.moving ? this.frameDelay : this.frameDelay * 3);
-
-    if ((this.moving || this.state === 'attacking' || this.state === 'idle') &&
-        time - this.lastFrameTime > delay) {
-
-      this.lastFrameTime = time;
-
-      if (this.state === 'attacking') {
-        this.frameIndex++;
-        if (this.frameIndex >= frames.length) {
-          // Finish attack
-          this.frameIndex = 0;
-          if (keys['w'] || keys['a'] || keys['s'] || keys['d']) {
-            this.state = 'walking';
-            this.handleInput(keys, lastKey); // ✅ reapply movement after attack
-          } else {
-            this.state = 'idle';
-          }
-        }
-      } else {
-        this.frameIndex = (this.frameIndex + 1) % frames.length;
+  
+      if (keys['w'] && lastKey === 'w') {
+        this.vy = -this.speed;
+        this.direction = 'up';
+        this.moving = true;
       }
-
+      if (keys['s'] && lastKey === 's') {
+        this.vy = this.speed;
+        this.direction = 'down';
+        this.moving = true;
+      }
+      if (keys['a'] && lastKey === 'a') {
+        this.vx = -this.speed;
+        this.direction = 'left';
+        this.moving = true;
+      }
+      if (keys['d'] && lastKey === 'd') {
+        this.vx = this.speed;
+        this.direction = 'right';
+        this.moving = true;
+      }
+  
+      if (this.moving && !wasMoving) {
+        this.lastFrameTime = performance.now();
+        this.state = 'walking';
+      } else if (!this.moving && this.state !== 'attacking') {
+        this.state = 'idle';
+      }
     }
-  }
-
-  draw(ctx) {
-    if (!this.image || !this.image.complete) return;
-
-    // mc-2.png grid: 14 columns, 4 rows; you pass exact indices per animation
-    const frameW = this.image.naturalWidth / this.spriteCols;
-    const frameH = this.image.naturalHeight / this.spriteRows;
-
-    let frames;
-    if (this.state === 'attacking') {
-      frames = this.frames['attack' + cap(this.direction)];
-    } else if (this.moving || this.state === 'walking') {
-      frames = this.frames[this.direction];
-    } else {
-      frames = this.frames['idle' + cap(this.direction)];
+  
+    startAttack() {
+      if (this.state !== 'attacking') {
+        this.state = 'attacking';
+        this.frameIndex = 0;
+        this.lastFrameTime = performance.now();
+        this.vx = 0;
+        this.vy = 0;
+        this.moving = false;
+      }
     }
+  
+    update(time, keys) {
+      // Animation selection (same as before)
+      let frames;
+      if (this.state === 'attacking') {
+        frames = this.frames['attack' + cap(this.direction)];
+      } else if (this.moving || this.state === 'walking') {
+        frames = this.frames[this.direction];
+      } else {
+        frames = this.frames['idle' + cap(this.direction)];
+      }
+  
+      const delay = (this.state === 'attacking')
+        ? this.attackFrameDelay
+        : (this.moving ? this.frameDelay : this.frameDelay * 3);
+  
+      if ((this.moving || this.state === 'attacking' || this.state === 'idle') &&
+          time - this.lastFrameTime > delay) {
+  
+        this.lastFrameTime = time;
+  
+        if (this.state === 'attacking') {
+          this.frameIndex++;
+          if (this.frameIndex >= frames.length) {
+            // Finish attack
+            this.frameIndex = 0;
+            if (keys['w'] || keys['a'] || keys['s'] || keys['d']) {
+              this.state = 'walking';
+              this.handleInput(keys, lastKey); // reapply movement after attack
+            } else {
+              this.state = 'idle';
+            }
+          }
+        } else {
+          this.frameIndex = (this.frameIndex + 1) % frames.length;
+        }
+      }
+    }
+  
+    draw(ctx) {
+      if (!this.image || !this.image.complete) return;
+  
+      const frameW = this.image.naturalWidth / this.spriteCols;
+      const frameH = this.image.naturalHeight / this.spriteRows;
+  
+      let frames;
+      if (this.state === 'attacking') {
+        frames = this.frames['attack' + cap(this.direction)];
+      } else if (this.moving || this.state === 'walking') {
+        frames = this.frames[this.direction];
+      } else {
+        frames = this.frames['idle' + cap(this.direction)];
+      }
+  
+      const tileIndex = frames[this.frameIndex % frames.length];
+      const sx = (tileIndex % this.spriteCols) * frameW;
+      const sy = Math.floor(tileIndex / this.spriteCols) * frameH;
+  
+      // draw scaled if scale != 1
+      const dw = Math.round(frameW * this.scale);
+      const dh = Math.round(frameH * this.scale);
+  
+      ctx.drawImage(
+        this.image,
+        sx, sy, frameW, frameH,
+        canvas.width / 2 - dw / 2,
+        canvas.height / 2 - dh / 2,
+        dw, dh
+      );
+    }
+  }  
 
-    const tileIndex = frames[this.frameIndex % frames.length];
-    const sx = (tileIndex % this.spriteCols) * frameW;
-    const sy = Math.floor(tileIndex / this.spriteCols) * frameH;
-
-    // Draw centered on screen (camera follows player)
-    ctx.drawImage(
-      this.image,
-      sx, sy, frameW, frameH,
-      canvas.width / 2 - frameW / 2,
-      canvas.height / 2 - frameH / 2,
-      frameW, frameH
+  /* ====== Load tileset images ====== */
+  tilesets.forEach((tileset, i) => {
+    const img = new Image();
+    img.onload = () => {
+      images[i] = img;
+      tilesetsLoaded++;
+      startIfReady();
+    };
+    img.src = tileset.src;
+  });
+  
+  /* ====== Collision helper (unchanged) ====== */
+  function isColliding(r1, r2) {
+    return (
+      r1.x < r2.x + r2.width &&
+      r1.x + r1.width > r2.x &&
+      r1.y < r2.y + r2.height &&
+      r1.y + r1.height > r2.y
     );
   }
-}
+  
+  const player = new Character({
+    x: 25 * TILE_SIZE,
+    y: 12 * TILE_SIZE,
+    speed: 3,
+    spriteSrc: 'mc-2.png',
+    spriteCols: 14,
+    spriteRows: 4,
+    frames: {
+      down: [52, 53, 54, 55],
+      left: [10, 11, 12, 13],
+      right: [24, 25, 26, 27],
+      up: [38, 39, 40, 41],
+      idleDown: [42, 43, 44, 45],
+      idleLeft: [0, 1, 2, 3],
+      idleRight: [14, 15, 16, 17],
+      idleUp: [28, 29, 30, 31],
+      attackDown: [46, 47, 48, 49, 50, 51],
+      attackLeft: [4, 5, 6, 7, 8, 9],
+      attackRight: [18, 19, 20, 21, 22, 23],
+      attackUp: [32, 33, 34, 35, 36, 37]
+    },
+    scale: 1,
+    hitboxWidth: 32,
+    hitboxHeight: 32,
+    hitboxOffsetX: 0,
+    hitboxOffsetY: 0
+  });
+  
+  // Make sure the player object is visible to object collision checks:
+  if (!window.obstacles.includes(player)) window.obstacles.push(player);
+  
+  /* ====== Spawn cow (push into window.objects & window.obstacles) ====== */
+  function spawnCowTile(xTile, yTile) {
+    const px = xTile * TILE_SIZE;
+    const py = yTile * TILE_SIZE;
+  
+    const frameW = 32;
+    const frameH = 20;
+    const scale = 2;
+    const footHeight = TILE_SIZE;
+    const hbOffsetY = Math.round(frameH * scale - footHeight);
+  
+    const animations = {
+      walk: [0, 1],
+      idle: [2, 3, 4],
+    };
+  
+    const cow = new GameObject(
+      px, py,
+      'cow-sprite-edited.png',
+      frameW, frameH,
+      animations,
+      3,
+      scale,
+      true,
+      frameW * 2,     // hitbox width (1 tile)
+      frameH * 2,    // hitbox height (1 tile)
+      0,
+      0,
+      0
+    );
+  
+    // Patrol
+    const patrolRadiusTiles = 3;
+    const minX = Math.max(0, px - patrolRadiusTiles * TILE_SIZE);
+    const maxX = Math.min(MAP_WIDTH * TILE_SIZE - TILE_SIZE, px + patrolRadiusTiles * TILE_SIZE);
+    cow.patrol = { minX, maxX };
 
-/* ====== Load tileset images ====== */
-tilesets.forEach((tileset, i) => {
-  const img = new Image();
-  img.onload = () => {
-    images[i] = img;
-    tilesetsLoaded++;
-    startIfReady();
-  };
-  img.src = tileset.src;
-});
+    cow.setPattern({ idleDuration: 2000, walkDuration: 2000, speed: 24, type: 'patrolIfPresent', initialDir: -1 });
 
-/* ====== Collision helper ====== */
-function isColliding(r1, r2) {
-  return (
-    r1.x < r2.x + r2.width &&
-    r1.x + r1.width > r2.x &&
-    r1.y < r2.y + r2.height &&
-    r1.y + r1.height > r2.y
-  );
-}
-
-/* ====== Create the player (Character instance) ====== */
-const player = new Character({
-  x: 25 * TILE_SIZE,
-  y: 12 * TILE_SIZE,
-  speed: 3,
-  spriteSrc: 'mc-2.png',
-  frameDelay: 150,
-  attackFrameDelay: 80,
-  frames: {
-    down: [52, 53, 54, 55],
-    left: [10, 11, 12, 13],
-    right: [24, 25, 26, 27],
-    up: [38, 39, 40, 41],
-    idleDown: [42, 43, 44, 45],
-    idleLeft: [0, 1, 2, 3],
-    idleRight: [14, 15, 16, 17],
-    idleUp: [28, 29, 30, 31],
-    attackDown: [46, 47, 48, 49, 50, 51],
-    attackLeft: [4, 5, 6, 7, 8, 9],
-    attackRight: [18, 19, 20, 21, 22, 23],
-    attackUp: [32, 33, 34, 35, 36, 37]
+    const speedPxPerSec = 24;
+    cow.vx = -speedPxPerSec;
+  
+    // push into global lists used everywhere
+    window.objects.push(cow);
+    window.obstacles.push(cow);
+  
+    return cow;
   }
-});
-
-/* ====== Start when assets ready ====== */
-function startIfReady() {
-  if (tilesetsLoaded === tilesets.length && characterLoaded) {
-    drawFullMapToCanvas();
+  
+  spawnCowTile(22, 12);
+  
+  /* ====== Start when assets ready ====== */
+  function startIfReady() {
+    if (tilesetsLoaded === tilesets.length && characterLoaded) {
+      drawFullMapToCanvas();
+      requestAnimationFrame(gameLoop);
+    }
+  }
+  
+  /* ====== Draw obstacles (debug) ====== */
+  function drawObstacles(ctx, offsetX, offsetY) {
+    ctx.fillStyle = "rgba(255, 0, 0, 0.4)"; // other obstacles
+    if (window.obstacles && Array.isArray(window.obstacles)) {
+      for (const obs of window.obstacles) {
+        if (!obs || obs === player) continue; // skip player here
+        const box = (typeof obs.getHitbox === 'function') ? obs.getHitbox() : obs;
+        ctx.fillRect(box.x - offsetX, box.y - offsetY, box.width, box.height);
+      }
+    }
+  
+    ctx.fillStyle = "rgba(0, 0, 255, 0.3)"; // player
+    const pbox = player.getHitbox();
+    ctx.fillRect(pbox.x - offsetX, pbox.y - offsetY, pbox.width, pbox.height);
+  }
+  
+  /* ====== Draw scene ====== */
+  function drawScene(time) {
+    let offsetX = player.x - canvas.width / 2 + TILE_SIZE / 2;
+    let offsetY = player.y - canvas.height / 2 + TILE_SIZE / 2;
+  
+    offsetX = Math.max(0, Math.min(offsetX, MAP_WIDTH * TILE_SIZE - canvas.width));
+    offsetY = Math.max(0, Math.min(offsetY, MAP_HEIGHT * TILE_SIZE - canvas.height));
+  
+    ctx.drawImage(
+      mapCanvas,
+      offsetX, offsetY, canvas.width, canvas.height,
+      0, 0, canvas.width, canvas.height
+    );
+  
+    const allEntities = [...window.objects, player];
+    allEntities.sort((a, b) => (a.y + a.height) - (b.y + b.height));
+  
+    allEntities.forEach(ent => {
+      if (ent instanceof GameObject) ent.draw(ctx, offsetX, offsetY);
+      else if (ent instanceof Character) ent.draw(ctx);
+      else if (typeof ent.draw === 'function') ent.draw(ctx, offsetX, offsetY);
+    });
+  
+    // top tiles
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      for (let x = 0; x < MAP_WIDTH; x++) {
+        const idx = y * MAP_WIDTH + x;
+        const tile = topMap[idx];
+        if (tile == null) continue;
+  
+        const drawX = x * TILE_SIZE - offsetX;
+        const drawY = y * TILE_SIZE - offsetY;
+        if (drawX + TILE_SIZE < 0 || drawX > canvas.width || drawY + TILE_SIZE < 0 || drawY > canvas.height) continue;
+  
+        drawTile(tile, drawX, drawY, ctx);
+      }
+    }
+  
+    drawObstacles(ctx, offsetX, offsetY);
+  }
+  
+  /* ====== Update Character Position with Collision ====== */
+  function updateCharacterPosition(char) {
+    // NOTE: char.vx and char.vy are expected to be per-frame in your current input model.
+    // We keep that, and move by vx/vy directly (consistent with your earlier code).
+    const nextX = char.x + char.vx;
+    const nextY = char.y + char.vy;
+  
+    function getBox(obs) {
+      return (typeof obs.getHitbox === 'function') ? obs.getHitbox() : obs;
+    }
+  
+    // X movement
+    const testX = char.getHitboxAt(nextX, char.y);
+    let blockedX = false;
+    if (window.obstacles && Array.isArray(window.obstacles)) {
+      for (const obs of window.obstacles) {
+        if (!obs || obs === char) continue;
+        const other = getBox(obs);
+        if (typeof isColliding === 'function' && isColliding(testX, other)) {
+          blockedX = true;
+          break;
+        }
+      }
+    }
+    if (!blockedX) char.x = nextX; else char.vx = 0;
+  
+    // Y movement
+    const testY = char.getHitboxAt(char.x, nextY);
+    let blockedY = false;
+    if (window.obstacles && Array.isArray(window.obstacles)) {
+      for (const obs of window.obstacles) {
+        if (!obs || obs === char) continue;
+        const other = getBox(obs);
+        if (typeof isColliding === 'function' && isColliding(testY, other)) {
+          blockedY = true;
+          break;
+        }
+      }
+    }
+    if (!blockedY) char.y = nextY; else char.vy = 0;
+  }
+  
+  /* ====== Game loop (player before objects) ====== */
+  function gameLoop(time) {
+    // clear
+    ctx.fillStyle = '#9bd4c3';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+    // 1) update player movement & animation
+    updateCharacterPosition(player);
+    player.update(time, keys);
+  
+    // 2) update all objects (cows, etc)
+    window.objects.forEach(obj => { if (typeof obj.update === 'function') obj.update(time); });
+  
+    // 3) draw
+    drawScene(time);
+  
     requestAnimationFrame(gameLoop);
   }
-}
-/* ====== Draw obstacles (debug mode) ====== */
-function drawObstacles(ctx, offsetX, offsetY) {
-  /* */
-  ctx.fillStyle = "rgba(255, 0, 0, 0.4)"; // red with transparency
-
-  obstacles.forEach(obs => {
-    const box = obs.getHitbox ? obs.getHitbox() : obs;
-    ctx.fillRect(box.x - offsetX, box.y - offsetY, box.width, box.height);
+  
+  /* ====== Input handling (WASD + Space) ====== */
+  const keys = {};
+  let lastKey = '';
+  
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.key === ' ') {
+      if (!player.attackHeld) {
+        player.attackHeld = true;
+        player.startAttack();
+      }
+      return;
+    }
+  
+    keys[e.key] = true;
+    lastKey = e.key;
+    player.handleInput(keys, lastKey);
   });
-
-  ctx.fillStyle = "rgba(0, 0, 255, 0.3)"; // player box
-  ctx.fillRect(player.x - offsetX, player.y - offsetY, player.width, player.height);
-}
-/* ====== Scene drawing ====== */
-function drawScene(time) {
-  let offsetX = player.x - canvas.width / 2 + TILE_SIZE / 2;
-  let offsetY = player.y - canvas.height / 2 + TILE_SIZE / 2;
-
-  // Clamp camera to map
-  offsetX = Math.max(0, Math.min(offsetX, MAP_WIDTH * TILE_SIZE - canvas.width));
-  offsetY = Math.max(0, Math.min(offsetY, MAP_HEIGHT * TILE_SIZE - canvas.height));
-
-  // Base + overlay (pre-rendered)
-  ctx.drawImage(
-    mapCanvas,
-    offsetX, offsetY, canvas.width, canvas.height,
-    0, 0, canvas.width, canvas.height
-  );
-
-  // 1. Update phase
-  [...objects, player].forEach(ent => {
-    if (typeof ent.update === "function") {
-      ent.update();
-    }
+  
+  document.addEventListener('keyup', (e) => {
+    keys[e.key] = false;
+    if (e.code === 'Space' || e.key === ' ') player.attackHeld = false;
+    player.handleInput(keys, lastKey);
   });
-
-  // 2. Draw phase (with depth sorting)
-  const allEntities = [...objects, player];
-
-  allEntities.sort((a, b) => (a.y + a.height) - (b.y + b.height));
-
-  allEntities.forEach(ent => {
-    if (ent instanceof Character) {
-      ent.draw(ctx); // player draw handles offset inside
-    } else {
-      ent.draw(ctx, offsetX, offsetY); // objects need offset
-    }
-  });
-
-  // Top layer tiles (draw only visible)
-  for (let y = 0; y < MAP_HEIGHT; y++) {
-    for (let x = 0; x < MAP_WIDTH; x++) {
-      const idx = y * MAP_WIDTH + x;
-      const tile = topMap[idx];
-      if (tile == null) continue;
-
-      const drawX = x * TILE_SIZE - offsetX;
-      const drawY = y * TILE_SIZE - offsetY;
-      if (drawX + TILE_SIZE < 0 || drawX > canvas.width || drawY + TILE_SIZE < 0 || drawY > canvas.height) continue;
-
-      drawTile(tile, drawX, drawY, ctx);
-    }
-  }
-
-  drawObstacles(ctx, offsetX, offsetY);
-}
-
-/* ====== Update Character Position with Collision ====== */
-function updateCharacterPosition(char) {
-  let nextX = char.x + char.vx;
-  let nextY = char.y + char.vy;
-
-  function getBox(obs) {
-    return obs.getHitbox ? obs.getHitbox() : obs;
-  }
-
-  // check X movement separately
-  const testX = { x: nextX, y: char.y, width: char.width, height: char.height };
-  let blockedX = obstacles.some(obs => isColliding(testX, getBox(obs)));
-  if (!blockedX) {
-    char.x = nextX;
-  } else {
-    char.vx = 0;
-  }
-
-  // check Y movement separately
-  const testY = { x: char.x, y: nextY, width: char.width, height: char.height };
-  let blockedY = obstacles.some(obs => isColliding(testY, getBox(obs)));
-  if (!blockedY) {
-    char.y = nextY;
-  } else {
-    char.vy = 0;
-  }
-}
-
-/* ====== Game loop ====== */
-function gameLoop(time) {
-  ctx.fillStyle = '#9bd4c3'; // base color
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  updateCharacterPosition(player);
-  player.update(time, keys);
-  drawScene(time);
-
-  requestAnimationFrame(gameLoop);
-}
-
-/* ====== Input handling (WASD + Space) ====== */
-const keys = {};
-let lastKey = '';
-
-document.addEventListener('keydown', (e) => {
-  // Attack (one-shot while held)
-  if (e.code === 'Space' || e.key === ' ') {
-    if (!player.attackHeld) {
-      player.attackHeld = true;
-      player.startAttack();
-    }
-    return;
-  }
-
-  keys[e.key] = true;
-  lastKey = e.key;
-  player.handleInput(keys, lastKey);
-});
-
-document.addEventListener('keyup', (e) => {
-  keys[e.key] = false;
-  if (e.code === 'Space' || e.key === ' ') {
-    player.attackHeld = false;
-  }
-  player.handleInput(keys, lastKey);
-});
-</script>
+  </script>
+  
 </body>
 </html>
