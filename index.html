@@ -15,8 +15,48 @@
 <canvas id="game"></canvas>
 <script src="data.js"></script>
 <script src="object.js"></script>
+<script src="objects.js"></script>
 <script src="tileset.js"></script>
 <script>
+  // ======= Tab pause / resume (visibility) handling =======
+  let isPaused = false;
+  let lastTime = null; // we use this as a rAF anchor (kept for clarity)
+
+  // When tab becomes hidden -> pause updates.
+  // When tab becomes visible -> resume and reset timing anchors to avoid huge deltas.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      // Pause updates (we still keep the RAF loop running)
+      isPaused = true;
+    } else {
+      // Resume: clear rAF anchor and reset per-object timers so no big dt on next frame
+      isPaused = false;
+      lastTime = null; // will be reinitialized on next RAF tick / update
+
+      const now = performance.now();
+
+      // Reset player animation timer (if present)
+      try {
+        if (typeof player !== 'undefined' && player) {
+          if ('lastFrameTime' in player) player.lastFrameTime = now;
+          if ('_lastTime' in player) player._lastTime = now;
+        }
+      } catch (e) {
+        // defensive: ignore if player not ready yet
+      }
+
+      // Reset game objects' internal timers as best we can (defensive)
+      if (window.objects && Array.isArray(window.objects)) {
+        for (const obj of window.objects) {
+          if (!obj) continue;
+          if ('_lastTime' in obj) obj._lastTime = now;          // GameObject internal anchor
+          if ('lastFrameTime' in obj) obj.lastFrameTime = now;  // other objects might use this
+          // do NOT change pattern timers — they were not decremented while paused
+        }
+      }
+    }
+  });
+
   /* ====== Constants & Canvas ====== */
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -365,7 +405,7 @@
   }
   
   const player = new Character({
-    x: 25 * TILE_SIZE,
+    x: 24 * TILE_SIZE,
     y: 12 * TILE_SIZE,
     speed: 3,
     spriteSrc: 'mc-2.png',
@@ -387,112 +427,13 @@
     },
     scale: 1,
     hitboxWidth: 32,
-    hitboxHeight: 32,
+    hitboxHeight: 20,
     hitboxOffsetX: 0,
-    hitboxOffsetY: 0
+    hitboxOffsetY: 15
   });
   
   // Make sure the player object is visible to object collision checks:
   if (!window.obstacles.includes(player)) window.obstacles.push(player);
-  
-  /* ====== Spawn cow (push into window.objects & window.obstacles) ====== */
-  function spawnCowTile(xTile, yTile) {
-    const px = xTile * TILE_SIZE;
-    const py = yTile * TILE_SIZE;
-  
-    const frameW = 32;
-    const frameH = 20;
-    const scale = 2;
-    const footHeight = TILE_SIZE;
-    const hbOffsetY = Math.round(frameH * scale - footHeight);
-  
-    const animations = {
-      walk: [0, 1],
-      idle: [2, 3, 4],
-    };
-  
-    const cow = new GameObject(
-      px, py,                   // position
-      'cow-sprite-edited.png',  // image
-      frameW, frameH,           // frame size
-      animations,               // put this for static frames[0]
-      3,                        // fps = 0 → no animation
-      scale,                    // scale (2x bigger)
-      true,                     // loop doesn’t matter
-      frameW * 2,               // hitbox width (1 tile)
-      frameH * 2,               // hitbox height (1 tile)
-      0, 0,                     // offset (so trunk is collidable, not leaves)
-      0
-    );
-  
-    // Patrol
-    const patrolRadiusTiles = 3;
-    const minX = Math.max(0, px - patrolRadiusTiles * TILE_SIZE);
-    const maxX = Math.min(MAP_WIDTH * TILE_SIZE - TILE_SIZE, px + patrolRadiusTiles * TILE_SIZE);
-    cow.patrol = { minX, maxX };
-
-    cow.setPattern({ idleDuration: 5000, walkDuration: 2000, speed: 24, type: 'patrolIfPresent', initialDir: -1 });
-
-    const speedPxPerSec = 24;
-    cow.vx = -speedPxPerSec;
-  
-    // push into global lists used everywhere
-    window.objects.push(cow);
-    window.obstacles.push(cow);
-  
-    return cow;
-  }
-
-  spawnCowTile(22, 9);
-
-  function spawnChickenTile(xTile, yTile) {
-    const px = xTile * TILE_SIZE;
-    const py = yTile * TILE_SIZE;
-  
-    const frameW = 16;
-    const frameH = 14;
-    const scale = 2;
-    const footHeight = TILE_SIZE;
-    const hbOffsetY = Math.round(frameH * scale - footHeight);
-  
-    const animations = {
-      walk: [2, 3, 4, 5],
-      idle: [0, 1],
-    };
-  
-    const chicken = new GameObject(
-      px, py,                   // position
-      'chicken-merged.png',     // image
-      frameW, frameH,           // frame size
-      animations,               // put this for static frames[0]
-      6,                        // fps = 0 → no animation
-      scale,                    // scale (2x bigger)
-      true,                     // loop doesn’t matter
-      frameW * 2,               // hitbox width (1 tile)
-      frameH * 2,               // hitbox height (1 tile)
-      0, 0,                     // offset (so trunk is collidable, not leaves)
-      0
-    );
-  
-    // Patrol
-    const patrolRadiusTiles = 3;
-    const minX = Math.max(0, px - patrolRadiusTiles * TILE_SIZE);
-    const maxX = Math.min(MAP_WIDTH * TILE_SIZE - TILE_SIZE, px + patrolRadiusTiles * TILE_SIZE);
-    chicken.patrol = { minX, maxX };
-
-    chicken.setPattern({ idleDuration: 500, walkDuration: 1000, speed: 80, type: 'patrolIfPresent', initialDir: -1 });
-
-    const speedPxPerSec = 24;
-    chicken.vx = -speedPxPerSec;
-  
-    // push into global lists used everywhere
-    window.objects.push(chicken);
-    window.obstacles.push(chicken);
-  
-    return chicken;
-  }
-
-  spawnChickenTile(13, 13);
   
   /* ====== Start when assets ready ====== */
   function startIfReady() {
@@ -504,8 +445,7 @@
   
   /* ====== Draw obstacles (debug) ====== */
   function drawObstacles(ctx, offsetX, offsetY) {
-
-    /*
+/*
     ctx.fillStyle = "rgba(255, 0, 0, 0.4)"; // other obstacles
     if (window.obstacles && Array.isArray(window.obstacles)) {
       for (const obs of window.obstacles) {
@@ -517,7 +457,7 @@
   
     ctx.fillStyle = "rgba(0, 0, 255, 0.3)"; // player
     const pbox = player.getHitbox();
-    ctx.fillRect(pbox.x - offsetX, pbox.y - offsetY, pbox.width, pbox.height);*/
+    ctx.fillRect(pbox.x - offsetX, pbox.y - offsetY, pbox.width, pbox.height);/**/
   }
   
   /* ====== Draw scene ====== */
@@ -603,20 +543,25 @@
     if (!blockedY) char.y = nextY; else char.vy = 0;
   }
   
-  /* ====== Game loop (player before objects) ====== */
   function gameLoop(time) {
-    // clear
+    // If paused, skip updates/draw but keep RAF running so we can resume correctly.
+    if (isPaused) {
+      requestAnimationFrame(gameLoop);
+      return;
+    }
+  
+    // normal frame work (unchanged)
     ctx.fillStyle = '#9bd4c3';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-    // 1) update player movement & animation
+    // 1) player movement & animation
     updateCharacterPosition(player);
     player.update(time, keys);
   
-    // 2) update all objects (cows, etc)
+    // 2) objects (time-based animations and AI)
     window.objects.forEach(obj => { if (typeof obj.update === 'function') obj.update(time); });
   
-    // 3) draw
+    // 3) draw scene
     drawScene(time);
   
     requestAnimationFrame(gameLoop);

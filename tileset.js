@@ -28,10 +28,13 @@ const tilesets = [
   
   { src: 'Doors.png', cols: 1, rows: 4 }, // 327 - 330
   { src: 'water.png', cols: 4, rows: 1 }, // 331 - 334
-  { src: 'Grass.png', cols: 22, rows: 14 }, // 335 - 642
-  { src: 'Paths.png', cols: 4, rows: 4 }, // 643 - 659
-  { src: 'Basic_Plants.png', cols: 6, rows: 2 }, // 660 - 671
-  { src: 'Basic_Furniture.png', cols: 9, rows: 6 }, // 671 - 724
-  { src: 'Fences.png', cols: 4, rows: 4 }, // 725 - 740
-  { src: 'Wood_Bridge.png', cols: 5, rows: 3 }, // 741 - 756
+  { src: 'Grass.png', cols: 11, rows: 7 }, // 335 - 411
+  { src: 'Paths.png', cols: 4, rows: 4 }, // 412 - 427
+  { src: 'Basic_Plants.png', cols: 6, rows: 2 }, // 428 - 439
+  { src: 'Basic_Furniture.png', cols: 9, rows: 6 }, // 440 - 493
+  { src: 'Fences.png', cols: 4, rows: 4 }, // 494 - 510
+  { src: 'Wood_Bridge.png', cols: 5, rows: 3 }, // 511 - 524  
+  { src: 'dirt.png', cols: 11, rows: 7 }, // 525 - 603 
+  { src: 'sunflower.png', cols: 1, rows: 2 }, // 602 - 603 
+  { src: 'plants.png', cols: 9, rows: 5 }, // 604 - 658
 ];
