@@ -171,7 +171,7 @@ const obstacles = [
     //barn
     { x: 686, y: 230, width: 164, height: 15 },
     { x: 686, y: 230, width: 5, height: 135 },
-    { x: 614, y: 230, width: 5, height: 135 },
+    { x: 845, y: 230, width: 5, height: 135 },
     { x: 686, y: 360, width: 164, height: 15 },
 
     //sunflowers
